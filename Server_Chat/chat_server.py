@@ -31,7 +31,6 @@ def get_old_messages(username, client_socket):
         payload = f"GET|{username}"
         db_socket.send(payload.encode('utf-8'))
 
-        # 🔥 leitura completa com marcador
         data = ""
         while True:
             part = db_socket.recv(1024).decode('utf-8')
@@ -42,11 +41,11 @@ def get_old_messages(username, client_socket):
         data = data.replace("<END>", "")
 
         if data:
-            client_socket.send(f"\n=== HISTÓRICO ===\n{data}".encode('utf-8'))
+            client_socket.send(f"\n= HISTÓRICO =\n{data}".encode('utf-8'))
 
         db_socket.close()
     except Exception as e:
-        print("[ERRO] Não conseguiu buscar histórico", e)
+        print("[ERRO] Histórico", e)
 
 
 def handle_client(client_socket, address):
@@ -63,7 +62,6 @@ def handle_client(client_socket, address):
         clients[username] = client_socket
         print(f"[CONEXÃO] {username} conectado via {address}")
 
-        # 🔥 histórico ao logar
         get_old_messages(username, client_socket)
 
         broadcast(f"{username} entrou no chat!", "SISTEMA")
@@ -88,6 +86,19 @@ def handle_client(client_socket, address):
             broadcast(f"{username} saiu do chat.", "SISTEMA")
         client_socket.close()
 
+def update_status(sender, target, message, status):
+    try:
+        db_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        db_socket.connect(('127.0.0.1', 6000))
+
+        payload = f"UPDATE|{sender}|{target}|{message}|{status}"
+        db_socket.send(payload.encode('utf-8'))
+
+        db_socket.recv(1024)
+        db_socket.close()
+    except:
+        pass
+
 
 def send_private_message(sender, target, message):
     save_message_to_db(sender, target, message)
@@ -95,6 +106,7 @@ def send_private_message(sender, target, message):
     if target in clients:
         payload = f"[Privado de {sender}]: {message}"
         clients[target].send(payload.encode('utf-8'))
+        update_status(sender, target, message, "entregue")
     else:
         clients[sender].send(f"USUÁRIO {target} OFFLINE.".encode('utf-8'))
 

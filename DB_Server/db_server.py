@@ -20,8 +20,8 @@ lock = threading.Lock()
 def save_message(sender, receiver, message):
     with lock:
         cursor.execute(
-            "INSERT INTO messages (sender, receiver, message) VALUES (%s, %s, %s)",
-            (sender, receiver, message)
+            "INSERT INTO messages (sender, receiver, message, status) VALUES (%s, %s, %s, %s)",
+            (sender, receiver, message, "enviado")
         )
         conn.commit()
 
@@ -29,14 +29,14 @@ def save_message(sender, receiver, message):
 def get_messages(username):
     with lock:
         cursor.execute(
-            "SELECT sender, message, timestamp FROM messages WHERE receiver = %s ORDER BY timestamp ASC",
+            "SELECT sender, message, timestamp, status FROM messages WHERE receiver = %s ORDER BY timestamp ASC",
             (username,)
         )
         messages = cursor.fetchall()
 
-        # 🔥 opcional: apagar depois de entregar
+        # marca como lido
         cursor.execute(
-            "DELETE FROM messages WHERE receiver = %s",
+            "UPDATE messages SET status = 'lido' WHERE receiver = %s",
             (username,)
         )
         conn.commit()
@@ -51,28 +51,50 @@ def handle_db_client(client_socket, address):
             if not data:
                 break
 
-            print(f"[DB RECEBEU]: {data}")  # debug
+            print(f"[DB RECEBEU]: {data}")
 
-            parts = data.split("|", 3)
+            parts = data.split("|") 
 
             if parts[0] == "SAVE":
+                if len(parts) < 4:
+                    client_socket.send("ERROR".encode('utf-8'))
+                    continue
+
                 _, sender, receiver, message = parts
                 save_message(sender, receiver, message)
                 client_socket.send("OK".encode('utf-8'))
 
             elif parts[0] == "GET":
+                if len(parts) < 2:
+                    client_socket.send("ERROR".encode('utf-8'))
+                    continue
+
                 _, username = parts
                 messages = get_messages(username)
 
                 response = ""
-                for sender, msg, ts in messages:
-                    response += f"[{ts}] {sender}: {msg}\n"
+                for sender, msg, ts, status in messages:
+                    response += f"[{ts}] {sender}: {msg} ({status})\n"
 
                 if response == "":
                     response = "Nenhuma mensagem encontrada.\n"
 
-                # 🔥 marcador de fim
                 client_socket.send((response + "<END>").encode('utf-8'))
+
+            elif parts[0] == "UPDATE":
+                if len(parts) < 5:
+                    client_socket.send("ERROR".encode('utf-8'))
+                    continue
+
+                _, sender, receiver, message, status = parts
+
+                cursor.execute(
+                    "UPDATE messages SET status = %s WHERE sender = %s AND receiver = %s AND message = %s",
+                    (status, sender, receiver, message)
+                )
+                conn.commit()
+
+                client_socket.send("OK".encode('utf-8'))
 
             else:
                 client_socket.send("INVALID_COMMAND<END>".encode('utf-8'))
@@ -88,7 +110,7 @@ def start_db_server():
     server.bind((HOST, PORT))
     server.listen()
 
-    print(f"[DB SERVER - PostgreSQL] Rodando em {HOST}:{PORT}")
+    print(f"[DB SERVER] Rodando em {HOST}:{PORT}")
 
     while True:
         client_sock, addr = server.accept()
