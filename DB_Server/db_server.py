@@ -6,9 +6,9 @@ HOST = '127.0.0.1'
 PORT = 6000
 
 conn = psycopg2.connect(
-    dbname="chat_db",
+    dbname="minizap2",
     user="postgres",
-    password="sua_senha",
+    password="1234",
     host="localhost",
     port="5432"
 )
@@ -32,7 +32,16 @@ def get_messages(username):
             "SELECT sender, message, timestamp FROM messages WHERE receiver = %s ORDER BY timestamp ASC",
             (username,)
         )
-        return cursor.fetchall()
+        messages = cursor.fetchall()
+
+        # 🔥 opcional: apagar depois de entregar
+        cursor.execute(
+            "DELETE FROM messages WHERE receiver = %s",
+            (username,)
+        )
+        conn.commit()
+
+        return messages
 
 
 def handle_db_client(client_socket, address):
@@ -42,7 +51,9 @@ def handle_db_client(client_socket, address):
             if not data:
                 break
 
-            parts = data.split("|")
+            print(f"[DB RECEBEU]: {data}")  # debug
+
+            parts = data.split("|", 3)
 
             if parts[0] == "SAVE":
                 _, sender, receiver, message = parts
@@ -57,10 +68,14 @@ def handle_db_client(client_socket, address):
                 for sender, msg, ts in messages:
                     response += f"[{ts}] {sender}: {msg}\n"
 
-                client_socket.send(response.encode('utf-8'))
+                if response == "":
+                    response = "Nenhuma mensagem encontrada.\n"
+
+                # 🔥 marcador de fim
+                client_socket.send((response + "<END>").encode('utf-8'))
 
             else:
-                client_socket.send("INVALID_COMMAND".encode('utf-8'))
+                client_socket.send("INVALID_COMMAND<END>".encode('utf-8'))
 
     except Exception as e:
         print(f"[ERRO DB] {address}: {e}")

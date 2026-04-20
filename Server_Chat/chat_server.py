@@ -6,7 +6,7 @@ PORT = 5000
 
 clients = {}
 
-# 🔌 conexão com DB Server
+
 def save_message_to_db(sender, target, message):
     try:
         db_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -15,9 +15,12 @@ def save_message_to_db(sender, target, message):
         payload = f"SAVE|{sender}|{target}|{message}"
         db_socket.send(payload.encode('utf-8'))
 
+        response = db_socket.recv(1024).decode('utf-8')
+        print(f"[DB RESPONSE]: {response}")
+
         db_socket.close()
-    except:
-        print("[ERRO] DB Server offline")
+    except Exception as e:
+        print("[ERRO] DB Server offline", e)
 
 
 def get_old_messages(username, client_socket):
@@ -28,13 +31,22 @@ def get_old_messages(username, client_socket):
         payload = f"GET|{username}"
         db_socket.send(payload.encode('utf-8'))
 
-        data = db_socket.recv(4096).decode('utf-8')
+        # 🔥 leitura completa com marcador
+        data = ""
+        while True:
+            part = db_socket.recv(1024).decode('utf-8')
+            data += part
+            if "<END>" in part:
+                break
+
+        data = data.replace("<END>", "")
+
         if data:
             client_socket.send(f"\n=== HISTÓRICO ===\n{data}".encode('utf-8'))
 
         db_socket.close()
-    except:
-        print("[ERRO] Não conseguiu buscar histórico")
+    except Exception as e:
+        print("[ERRO] Não conseguiu buscar histórico", e)
 
 
 def handle_client(client_socket, address):
@@ -51,7 +63,7 @@ def handle_client(client_socket, address):
         clients[username] = client_socket
         print(f"[CONEXÃO] {username} conectado via {address}")
 
-        # 🔥 Busca histórico
+        # 🔥 histórico ao logar
         get_old_messages(username, client_socket)
 
         broadcast(f"{username} entrou no chat!", "SISTEMA")
@@ -63,6 +75,7 @@ def handle_client(client_socket, address):
 
             if ":" in message:
                 target, msg_content = message.split(":", 1)
+                print(f"[MSG] {username} -> {target}: {msg_content}")
                 send_private_message(username, target, msg_content)
             else:
                 broadcast(message, username)
@@ -77,7 +90,6 @@ def handle_client(client_socket, address):
 
 
 def send_private_message(sender, target, message):
-    # 💾 salva no banco
     save_message_to_db(sender, target, message)
 
     if target in clients:
