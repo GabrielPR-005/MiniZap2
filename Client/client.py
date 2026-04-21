@@ -22,6 +22,12 @@ def start_client():
                 msg = client.recv(1024).decode('utf-8')
                 if msg:
                     print(f"\n{msg}")
+
+                    # confirmação de leitura
+                    if "[Privado de" in msg:
+                        sender = msg.split("de ")[1].split("]")[0]
+                        client.send(f"READ:{sender}".encode('utf-8'))
+
                     print("> ", end="", flush=True)
             except:
                 break

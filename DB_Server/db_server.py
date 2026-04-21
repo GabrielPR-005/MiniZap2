@@ -34,9 +34,8 @@ def get_messages(username):
         )
         messages = cursor.fetchall()
 
-        # marca como lido
         cursor.execute(
-            "UPDATE messages SET status = 'lido' WHERE receiver = %s",
+            "UPDATE messages SET status = 'entregue' WHERE receiver = %s AND status = 'enviado'",
             (username,)
         )
         conn.commit()
@@ -51,24 +50,14 @@ def handle_db_client(client_socket, address):
             if not data:
                 break
 
-            print(f"[DB RECEBEU]: {data}")
-
-            parts = data.split("|") 
+            parts = data.split("|")
 
             if parts[0] == "SAVE":
-                if len(parts) < 4:
-                    client_socket.send("ERROR".encode('utf-8'))
-                    continue
-
                 _, sender, receiver, message = parts
                 save_message(sender, receiver, message)
                 client_socket.send("OK".encode('utf-8'))
 
             elif parts[0] == "GET":
-                if len(parts) < 2:
-                    client_socket.send("ERROR".encode('utf-8'))
-                    continue
-
                 _, username = parts
                 messages = get_messages(username)
 
@@ -82,15 +71,11 @@ def handle_db_client(client_socket, address):
                 client_socket.send((response + "<END>").encode('utf-8'))
 
             elif parts[0] == "UPDATE":
-                if len(parts) < 5:
-                    client_socket.send("ERROR".encode('utf-8'))
-                    continue
-
-                _, sender, receiver, message, status = parts
+                _, msg_id, status = parts
 
                 cursor.execute(
-                    "UPDATE messages SET status = %s WHERE sender = %s AND receiver = %s AND message = %s",
-                    (status, sender, receiver, message)
+                    "UPDATE messages SET status = %s WHERE id = %s",
+                    (status, msg_id)
                 )
                 conn.commit()
 

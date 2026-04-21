@@ -5,6 +5,7 @@ HOST = '127.0.0.1'
 PORT = 5000
 
 clients = {}
+clients_lock = threading.Lock()
 
 
 def save_message_to_db(sender, target, message):
@@ -16,11 +17,24 @@ def save_message_to_db(sender, target, message):
         db_socket.send(payload.encode('utf-8'))
 
         response = db_socket.recv(1024).decode('utf-8')
-        print(f"[DB RESPONSE]: {response}")
-
         db_socket.close()
+
     except Exception as e:
         print("[ERRO] DB Server offline", e)
+
+
+def update_status(msg_id, status):
+    try:
+        db_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        db_socket.connect(('127.0.0.1', 6000))
+
+        payload = f"UPDATE|{msg_id}|{status}"
+        db_socket.send(payload.encode('utf-8'))
+
+        db_socket.recv(1024)
+        db_socket.close()
+    except:
+        pass
 
 
 def get_old_messages(username, client_socket):
@@ -48,28 +62,63 @@ def get_old_messages(username, client_socket):
         print("[ERRO] Histórico", e)
 
 
+def send_private_message(sender, target, message):
+    save_message_to_db(sender, target, message)
+
+    with clients_lock:
+        if target in clients:
+            payload = f"[Privado de {sender}]: {message}"
+
+            try:
+                clients[target].send(payload.encode('utf-8'))
+                print(f"[STATUS] {sender}->{target}: ENTREGUE")
+
+            except:
+                del clients[target]
+        else:
+            clients[sender].send(
+                f"Mensagem enviada para {target} (aguardando entrega)".encode('utf-8')
+            )
+
+
+def broadcast(message, sender):
+    payload = f"[{sender}]: {message}"
+    with clients_lock:
+        for user, sock in clients.items():
+            if user != sender:
+                try:
+                    sock.send(payload.encode('utf-8'))
+                except:
+                    continue
+
+
 def handle_client(client_socket, address):
     username = None
     try:
         client_socket.send("USER_AUTH".encode('utf-8'))
         username = client_socket.recv(1024).decode('utf-8')
 
-        if username in clients:
-            client_socket.send("ERRO: Usuário já online.".encode('utf-8'))
-            client_socket.close()
-            return
+        with clients_lock:
+            if username in clients:
+                client_socket.send("ERRO: Usuário já online.".encode('utf-8'))
+                client_socket.close()
+                return
 
-        clients[username] = client_socket
+            clients[username] = client_socket
+
         print(f"[CONEXÃO] {username} conectado via {address}")
 
         get_old_messages(username, client_socket)
-
         broadcast(f"{username} entrou no chat!", "SISTEMA")
 
         while True:
             message = client_socket.recv(1024).decode('utf-8')
             if not message:
                 break
+
+            if message.startswith("READ:"):
+                print(f"[STATUS] mensagem lida por {username}")
+                continue
 
             if ":" in message:
                 target, msg_content = message.split(":", 1)
@@ -80,45 +129,14 @@ def handle_client(client_socket, address):
 
     except Exception as e:
         print(f"[ERRO] {username}: {e}")
+
     finally:
-        if username in clients:
-            del clients[username]
-            broadcast(f"{username} saiu do chat.", "SISTEMA")
+        with clients_lock:
+            if username in clients:
+                del clients[username]
+
+        broadcast(f"{username} saiu do chat.", "SISTEMA")
         client_socket.close()
-
-def update_status(sender, target, message, status):
-    try:
-        db_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        db_socket.connect(('127.0.0.1', 6000))
-
-        payload = f"UPDATE|{sender}|{target}|{message}|{status}"
-        db_socket.send(payload.encode('utf-8'))
-
-        db_socket.recv(1024)
-        db_socket.close()
-    except:
-        pass
-
-
-def send_private_message(sender, target, message):
-    save_message_to_db(sender, target, message)
-
-    if target in clients:
-        payload = f"[Privado de {sender}]: {message}"
-        clients[target].send(payload.encode('utf-8'))
-        update_status(sender, target, message, "entregue")
-    else:
-        clients[sender].send(f"USUÁRIO {target} OFFLINE.".encode('utf-8'))
-
-
-def broadcast(message, sender):
-    payload = f"[{sender}]: {message}"
-    for user, sock in clients.items():
-        if user != sender:
-            try:
-                sock.send(payload.encode('utf-8'))
-            except:
-                continue
 
 
 def start_server():
