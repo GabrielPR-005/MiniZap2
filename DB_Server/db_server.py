@@ -2,9 +2,11 @@ import socket
 import threading
 import psycopg2
 
-HOST = '127.0.0.1'
+HOST = '0.0.0.0'
 PORT = 6000
 
+
+#conexão com banco
 conn = psycopg2.connect(
     dbname="minizap2",
     user="postgres",
@@ -34,6 +36,7 @@ def get_messages(username):
         )
         messages = cursor.fetchall()
 
+        # vira entregue
         cursor.execute(
             "UPDATE messages SET status = 'entregue' WHERE receiver = %s AND status = 'enviado'",
             (username,)
@@ -41,6 +44,15 @@ def get_messages(username):
         conn.commit()
 
         return messages
+
+
+def mark_all_as_read(username):
+    with lock:
+        cursor.execute(
+            "UPDATE messages SET status = 'lido' WHERE receiver = %s",
+            (username,)
+        )
+        conn.commit()
 
 
 def handle_db_client(client_socket, address):
@@ -70,15 +82,9 @@ def handle_db_client(client_socket, address):
 
                 client_socket.send((response + "<END>").encode('utf-8'))
 
-            elif parts[0] == "UPDATE":
-                _, msg_id, status = parts
-
-                cursor.execute(
-                    "UPDATE messages SET status = %s WHERE id = %s",
-                    (status, msg_id)
-                )
-                conn.commit()
-
+            elif parts[0] == "READ":
+                _, username = parts
+                mark_all_as_read(username)
                 client_socket.send("OK".encode('utf-8'))
 
             else:

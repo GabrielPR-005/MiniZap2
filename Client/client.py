@@ -1,7 +1,7 @@
 import socket
 import threading
 
-HOST = '127.0.0.1'
+HOST = '26.15.73.85'  
 PORT = 5000
 
 def start_client():
@@ -25,8 +25,8 @@ def start_client():
 
                     # confirmação de leitura
                     if "[Privado de" in msg:
-                        sender = msg.split("de ")[1].split("]")[0]
-                        client.send(f"READ:{sender}".encode('utf-8'))
+                        print("[DEBUG] enviando READ")
+                        client.send(f"READ:{username}".encode('utf-8'))
 
                     print("> ", end="", flush=True)
             except:
@@ -40,6 +40,7 @@ def start_client():
             client.send(message.encode('utf-8'))
         except:
             break
+
 
 if __name__ == "__main__":
     start_client()
